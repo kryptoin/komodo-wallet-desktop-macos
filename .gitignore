@@ -1,0 +1,214 @@
+# ==============================================================================
+# OS & Environment Files
+# ==============================================================================
+.directory
+.DS_Store
+Thumbs.db
+
+# ==============================================================================
+# Build Systems (CMake, Ninja, Make)
+# ==============================================================================
+build/
+build_debug/
+build*/
+/build*.ninja
+/build*/
+/build-macos-anaconda3
+/build-macos-anaconda3-test
+/build-macos-analysis
+/build-macos-apple-silicon
+/build-macos-lwc-r1.5.6
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+cmake-3.19.0-rc3-Linux-x86_64
+cmake-3.19.0-rc3-Linux-x86_64/*
+Makefile*
+*.ninja
+.ninja_deps
+.ninja_log
+/ninja
+/ninja.bootstrap
+/ninja_test
+/compile_commands.json
+/.fetchcontent-cache
+
+# ==============================================================================
+# Compiled Binaries & Object Files
+# ==============================================================================
+*.a
+*.app
+*.dll
+*.dylib
+*.exe
+*.o
+*.obj
+*.so
+*.so.*
+/dist/
+/out/
+bundled/
+
+# ==============================================================================
+# C++ & Qt Framework
+# ==============================================================================
+*.moc
+*.qm
+*.prl
+*.res
+*_pch.h.cpp
+*_resource.rc
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+/.qmake.cache
+/.qmake.stash
+*.pro.user*
+
+# ==============================================================================
+# IDEs & Editors (VSCode, Visual Studio, JetBrains, Sublime, etc.)
+# ==============================================================================
+# VSCode
+.vscode/
+/.vscode/
+.vscode/launch.json
+.vscode/settings.json
+.vscode/tasks.json
+
+# Visual Studio / MSVC
+/.vs/
+*.sln
+*.suo
+*.vcproj
+*.vcxproj
+*vcproj.*.*.user
+*vcxproj.*
+*.ncb
+*.opensdf
+*.sdf
+
+# JetBrains / CLion
+.idea
+.idea/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Eclipse / C/C++ Tooling
+.cproject
+.project
+CMakeLists.txt.user
+/.clangd/
+/.ccls-cache/
+
+# Emacs / Vim
+.*.swp
+*~
+.#*
+*.*#
+tags
+
+# ==============================================================================
+# Logs, Profiling, Debugging & Temps
+# ==============================================================================
+*.log
+*.tmp
+*.dump
+*.cache
+/.cache/
+*.debug
+*.Debug
+*.Release
+*.ib_pdb_index
+*.idb
+*.ilk
+*.pdb
+*.flc
+*.autosave
+*.orig
+*.patch
+*.rej
+backtrace.dump
+build.log
+/build_log_perftest
+/canon_perftest
+/clparser_perftest
+/depfile_parser_perftest
+/elide_middle_perftest
+/manifest_parser_perftest
+/hash_collision_bench
+
+# ==============================================================================
+# Python Environment
+# ==============================================================================
+*.pyc
+*.pyo
+__pycache__/
+.venv
+.venv/*
+
+# ==============================================================================
+# Project-Specific: Dependencies, Tools & CI (DEX, Wallet, Komodo)
+# ==============================================================================
+/assets/tools/kdf/
+assets/tools/kdf/mm2_cheetah
+atomic_legacy_imgui/
+/vendor/coins/
+/local/
+/tools/
+
+# Atomic DEX CI & Installer Tools (generated copies only in this tree; the
+# installer templates themselves are not present)
+/ci_tools_atomic_dex/
+ci_tools_atomic_dex/build-Debug
+ci_tools_atomic_dex/build-Release
+ci_tools_atomic_dex/bundle-Debug
+ci_tools_atomic_dex/bundle-Release
+ci_tools_atomic_dex/cmake-3.19.0-rc3-Linux-x86_64
+ci_tools_atomic_dex/cmake-3.19.0-rc3-Linux-x86_64/*
+ci_tools_atomic_dex/installer/linux/packages/com.komodoplatform.atomicdexpro/data
+ci_tools_atomic_dex/installer/windows/packages/com.komodoplatform.atomicdexpro/data
+
+# Apple Silicon native build (see build_apple_silicon.sh): local libwally-core
+# checkout + install prefix. Its .pc files embed absolute home-dir paths, so
+# this must never be committed.
+/.deps/
+
+# FetchContent / build script outputs staged into the source tree (regenerated
+# every configurerun; the tracked imports/qml.qrc is intentionally NOT listed)
+/atomic_defi_design/Dex/qml.qrc
+/atomic_defi_design/assets/qml.qrc
+/atomic_defi_design/assets/images/coins/
+/atomic_defi_design/imports/bignumberjs/bignumber.js/bignumber.js
+
+# macOS installer image (produced by osx_post_install.cmake into bundled/osx/)
+*.dmg
+
+# ==============================================================================
+# Documentation & Configurations
+# ==============================================================================
+/doc/doxygen/
+/doc/manual.html
+/docs/**/*.md
+/docs/*.md
+/graph.png
+.gitconfig
+# NOTE: no blanket *.yaml rule -- it would silently exclude CI workflow and
+# config files added later. Ignore specific generated yaml files instead.
+# Hand-written working docs stay tracked:
+!/docs/implementation_plan.md
+
+# ==============================================================================
+# Exceptions (Ensure these ARE tracked by Git)
+# ==============================================================================
+# Ignore coredumps, but never the src/core/ source tree (an unanchored `core`
+# pattern would match that directory; anchored + explicit exception instead).
+*.core
+/core
+!/core/
+!src/core/
+
+# Keep docs images explicitly tracked
+!/docs/images/

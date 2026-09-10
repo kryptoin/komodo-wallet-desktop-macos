@@ -1,0 +1,299 @@
+import QtQuick 2.15
+import QtQuick.Layouts 1.15
+import "../Constants" as Dex
+import "../Components" as Dex
+import "../Screens"
+import App 1.0 as Dex
+import Dex.Themes 1.0 as Dex
+
+Dex.DefaultListView
+{
+    id: list
+    interactive: false
+    scrollbar_visible: false
+    model: null
+
+    property real _assetRowHeight: 46
+    property real _assetNameColumnWidth: 180
+    property real _assetBalanceColumnWidth: 190
+    property real _fiatBalanceColumnWidth: 180
+    property real _assetChange24hColumnWidth: 160
+    property real _assetPriceColumWidth: 180
+    property real _assetProviderColumnWidth: 90
+
+    width: _assetNameColumnWidth + _assetBalanceColumnWidth + _fiatBalanceColumnWidth + _assetChange24hColumnWidth + _assetPriceColumWidth + _assetProviderColumnWidth
+    Layout.fillHeight: true
+
+    Timer {
+        id: delayModel
+        interval: 200 // Gives a short delay for heavy bulk row allocations to settle
+        repeat: false
+        running: true
+        onTriggered: {
+            let proxy = Dex.API.app.portfolio_pg.portfolio_mdl.portfolio_proxy_mdl;
+            if (proxy) {
+                proxy.with_balance = false;
+                list.model = proxy;
+                proxy.invalidate();
+            }
+        }
+    }
+
+    header: Item
+    {
+        width: list.width
+        height: 40
+
+        RowLayout
+        {
+            id: columnsHeader
+            anchors.fill: parent
+
+            Dex.ColumnHeader
+            {
+                Layout.preferredWidth: _assetNameColumnWidth
+                Layout.fillHeight: true
+                Layout.leftMargin: 15
+                h_align: Text.AlignLeft
+                sort_type: sort_by_name
+                text: qsTr("Asset")
+            }
+
+            Dex.ColumnHeader
+            {
+                Layout.preferredWidth: _assetBalanceColumnWidth
+                Layout.fillHeight: true
+                h_align: Text.AlignRight
+                sort_type: sort_by_unset
+                text: qsTr("Balance")
+            }
+
+            Dex.ColumnHeader
+            {
+                Layout.preferredWidth: _fiatBalanceColumnWidth
+                Layout.fillHeight: true
+                h_align: Text.AlignRight
+                sort_type: sort_by_value
+                text: qsTr("Fiat Balance")
+            }
+
+            Dex.ColumnHeader
+            {
+                Layout.preferredWidth: _assetChange24hColumnWidth
+                Layout.fillHeight: true
+                h_align: Text.AlignRight
+                sort_type: sort_by_change
+                text: qsTr("Change 24h")
+            }
+
+            Dex.ColumnHeader
+            {
+                Layout.preferredWidth: _assetPriceColumWidth
+                Layout.fillHeight: true
+                h_align: Text.AlignRight
+                sort_type: sort_by_price
+                text: qsTr("Price")
+            }
+
+            Dex.ColumnHeader
+            {
+                Layout.preferredWidth: _assetProviderColumnWidth
+                Layout.fillHeight: true
+                h_align: Text.AlignHCenter
+                sort_type: sort_by_unset
+                text: qsTr("Source")
+            }
+        }
+    }
+
+    delegate: Rectangle
+    {
+        property color _idleColor: index % 2 === 1 ? Dex.CurrentTheme.listItemOddBackground : Dex.CurrentTheme.listItemEvenBackground
+        property int activation_pct: Dex.General.zhtlcActivationProgress(Dex.API.app.get_task_activation_status(ticker), ticker)
+
+        Connections
+        {
+            target: Dex.API.app.settings_pg
+            function onZhtlcStatusChanged() {
+                activation_pct = Dex.General.zhtlcActivationProgress(Dex.API.app.get_task_activation_status(ticker), ticker)
+            }
+        }
+
+        width: list.width
+        height: _assetRowHeight
+        color: mouseArea.containsMouse ? Dex.CurrentTheme.listItemHoveredBackground : _idleColor
+        //color: _idleColor
+
+        RowLayout
+        {
+            anchors.fill: parent
+
+            Item // Asset Column.
+            {
+                Layout.fillHeight: true
+                Layout.preferredWidth: _assetNameColumnWidth
+                Layout.leftMargin: 15
+
+                Dex.DefaultImage {
+                    id: assetImage
+                    anchors.verticalCenter: parent.verticalCenter
+                    source: Dex.General.coinIcon(ticker)
+                    width: 30
+                    height: 30
+
+                    Dex.DefaultRectangle
+                    {
+                        anchors.centerIn: parent
+                        anchors.fill: parent
+                        radius: 15
+                        enabled: activation_pct < 100
+                        visible: enabled
+                        opacity: .9
+                        color: Dex.DexTheme.backgroundColor
+                    }
+
+                    Dex.DexLabel
+                    {
+                        anchors.centerIn: parent
+                        anchors.fill: parent
+                        enabled: activation_pct < 100
+                        visible: enabled
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        text: activation_pct + "%"
+                        font: Dex.DexTypo.head8
+                        color: Dex.DexTheme.okColor
+                    }
+                }
+
+                Dex.DexLabel
+                {
+                    id: assetNameLabel
+                    anchors.top: assetImage.top
+                    anchors.left: assetImage.right
+                    anchors.leftMargin: 15
+                    text: model.ticker
+                }
+
+                Dex.DexLabel
+                {
+                    id: typeTag
+                    anchors.bottom: assetImage.bottom
+                    anchors.left: assetImage.right
+                    anchors.leftMargin: 15
+                    text: model.type
+                    font: Dex.DexTypo.overLine
+                    opacity: .7
+                    color: Dex.Style.getCoinColor(ticker)
+                }
+            }
+
+            Dex.DexLabel // Balance Column
+            {
+                id: assetBalanceLabel
+                Layout.fillHeight: true
+                Layout.preferredWidth: _assetBalanceColumnWidth
+                horizontalAlignment: Text.AlignRight
+                verticalAlignment: Text.AlignVCenter
+                font: Dex.DexTypo.body2
+                text_value:
+                {
+                    if (Dex.General.isZhtlc(ticker))
+                    {
+                        let x = activation_pct
+                        if (x != 100)
+                        {
+                            return qsTr("Activating: ") + x + "%"
+                        }
+                    }
+                    return model.balance
+                }
+                privacy: true
+            }
+
+            Dex.DexLabel // Fiat Balance Column
+            {
+                id: fiatBalanceLabel
+                Layout.fillHeight: true
+                Layout.preferredWidth: _fiatBalanceColumnWidth
+                horizontalAlignment: Text.AlignRight
+                verticalAlignment: Text.AlignVCenter
+                font: Dex.DexTypo.body2
+                text_value: Dex.API.app.settings_pg.current_currency_sign + " " + model.main_currency_balance
+                privacy: true
+            }
+
+            Dex.DexLabel // Change 24h Column
+            {
+                id: assetChange24hLabel
+                Layout.fillHeight: true
+                Layout.preferredWidth: _assetChange24hColumnWidth
+                font: Dex.DexTypo.body2
+                horizontalAlignment: Text.AlignRight
+                verticalAlignment: Text.AlignVCenter
+                text_value: model.change_24h === "0.000" ? '-' : model.change_24h + " %"
+                color: parseFloat(model.change_24h) < 0 ? Dex.DexTheme.warningColor : Dex.DexTheme.okColor
+            }
+
+            Dex.DexLabel // Price Column
+            {
+                id: price24hLabel
+                Layout.fillHeight: true
+                Layout.preferredWidth: _assetPriceColumWidth
+                font: Dex.DexTypo.body2
+                horizontalAlignment: Text.AlignRight
+                verticalAlignment: Text.AlignVCenter
+                text_value: Dex.API.app.settings_pg.current_currency_sign + " " + model.main_currency_price_for_one_unit
+            }
+
+            Item // Price Provider
+            {
+                Layout.fillHeight: true
+                Layout.preferredWidth: _assetProviderColumnWidth
+
+                Dex.DefaultImage {
+                    id: priceProviderIcon
+                    enabled: priceProvider !== "unknown"
+                    visible: enabled
+                    anchors.centerIn: parent
+                    source: enabled ? Dex.General.providerIcon(priceProvider) : ""
+                    width: 16
+                    height: 16
+                }
+            }
+
+            Dex.CoinMenu { id: contextMenu }
+        }
+
+        Dex.DefaultMouseArea
+        {
+            id: mouseArea
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+
+            onClicked:
+            {
+                if (mouse.button === Qt.RightButton)
+                {
+                    contextMenu.can_disable = Dex.General.canDisable(ticker)
+                    contextMenu.popup()
+                }
+                else
+                {
+                    api_wallet_page.ticker = ticker
+                    dashboard.switchPage(Dashboard.PageType.Wallet)
+                }
+            }
+
+            onPressAndHold:
+            {
+                if (mouse.source === Qt.MouseEventNotSynthesized)
+                {
+                    contextMenu.can_disable = Dex.General.canDisable(ticker)
+                    contextMenu.popup()
+                }
+            }
+        }
+    }
+}

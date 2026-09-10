@@ -1,0 +1,539 @@
+import QtQuick 2.15
+import QtQuick.Layouts 1.15
+import QtQuick.Controls 2.15
+import QtWebEngine 1.10
+import "../Components"
+import "../Constants"
+import App 1.0
+import "../Dashboard"
+import "../Portfolio"
+import "../Wallet"
+import "../Exchange"
+import "../Settings"
+import "../Support"
+import "../Sidebar" as Sidebar
+import "../Settings" as SettingsPage
+import "../Support" as SupportPage
+import "../Screens"
+import "../Addressbook" as Addressbook
+import Dex.Themes 1.0 as Dex
+import AtomicDEX.TradingMode 1.0
+
+Item
+{
+    id: dashboard
+    Layout.fillWidth: true
+
+    enum PageType
+    {
+        Portfolio,
+        Wallet,
+        DEX,            // DEX == Trading page
+        Addressbook
+    }
+
+    property var currentPage: Dashboard.PageType.Portfolio
+    property var availablePages: [portfolio, wallet, exchange, addressbook]
+    property alias webEngineView: webEngineView
+    readonly property int idx_exchange_trade: 0
+    readonly property int idx_exchange_orders: 1
+    readonly property int idx_exchange_history: 2
+    property var current_ticker
+    property var notifications_list: ([])
+    readonly property var portfolio_mdl: API.app.portfolio_pg.portfolio_mdl
+    property var portfolio_coins: portfolio_mdl.portfolio_proxy_mdl
+    readonly property var   api_wallet_page: API.app.wallet_pg
+    readonly property var   current_ticker_infos: api_wallet_page.ticker_infos
+    readonly property bool  can_disable_ticker: !api_wallet_page.tx_fetching_busy
+    readonly property alias loader: loader
+    readonly property alias current_component: loader.item
+
+    function openLogsFolder()
+    {
+        Qt.openUrlExternally(General.os_file_prefix + API.app.settings_pg.get_log_folder())
+    }
+
+    function inCurrentPage() { return app.current_page === idx_dashboard }
+
+    function switchPage(page)
+    {
+        if (loader.status === Loader.Ready)
+            currentPage = page
+        else
+            console.warn("Tried to switch to page %1 when loader is not ready yet.".arg(page))
+    }
+
+    function openTradeViewWithTicker()
+    {
+        dashboard.loader.onLoadComplete = () => {
+            dashboard.current_component.openTradeView(api_wallet_page.ticker)
+        }
+    }
+
+    onCurrentPageChanged: {
+        sidebar.currentLineType = currentPage
+        if (currentPage == Dashboard.PageType.DEX) {
+            const t = dashboard.current_ticker && dashboard.current_ticker !== ""
+                    ? dashboard.current_ticker
+                    : api_wallet_page.ticker
+            API.app.trading_pg.set_pair(true, t)
+        }
+    }
+
+    SupportPage.SupportModal { id: support_modal }
+
+    // Al settings depends this modal
+    SettingsPage.SettingModal { id: setting_modal }
+
+    // Right side
+    AnimatedRectangle
+    {
+        width: parent.width - sidebar.width
+        height: parent.height
+        x: sidebar.width
+        border.color: 'transparent'
+
+        Rectangle
+        {
+            radius: 0
+            anchors.fill: parent
+            anchors.rightMargin : - border.width
+            anchors.bottomMargin:  - border.width
+            anchors.leftMargin: - border.width
+            border.width: 1
+            border.color: Dex.CurrentTheme.lineSeparatorColor
+            color: 'transparent'
+        }
+
+        // Modals
+        ModalLoader
+        {
+            id: enable_coin_modal
+            sourceComponent: EnableCoinModal
+            {
+                anchors.centerIn: Overlay.overlay
+            }
+        }
+
+        Component
+        {
+            id: portfolio
+            Portfolio {}
+        }
+
+        Component
+        {
+            id: wallet
+            Wallet {}
+        }
+
+        Component
+        {
+            id: exchange
+            Exchange {}
+        }
+
+        Component
+        {
+            id: addressbook
+            Addressbook.Main { }
+        }
+
+        WebEngineView
+        {
+            id: webEngineView
+            backgroundColor: "transparent"
+
+            settings.javascriptEnabled: true
+            settings.localStorageEnabled: true
+            settings.localContentCanAccessRemoteUrls: true
+            settings.errorPageEnabled: false
+
+            onJavaScriptConsoleMessage: function(level, message, lineNumber, sourceID)
+            {
+                console.log("JS:", message, "line:", lineNumber, "source:", sourceID)
+            }
+        }
+
+        DefaultLoader
+        {
+            id: loader
+            anchors.fill: parent
+            transformOrigin: Item.Center
+            asynchronous: true
+
+            sourceComponent: availablePages[currentPage]
+        }
+
+        Item
+        {
+            visible: !loader.visible
+            anchors.fill: parent
+
+            DefaultBusyIndicator
+            {
+                anchors.centerIn: parent
+                running: !loader.visible
+            }
+        }
+
+        // Status bar
+        DefaultRectangle
+        {
+            id: status_bar
+            visible: API.app.zcash_params.is_downloading()
+            width: parent.width
+            height: 24
+            anchors.bottom: parent.bottom
+            color: 'transparent'
+
+            DefaultRectangle
+            {
+                color: Dex.CurrentTheme.accentColor
+                width: 380
+                height: parent.height
+                anchors.right: parent.right
+                radius: 0
+
+                DefaultProgressBar
+                {
+                    id: download_progress
+                    anchors.fill: parent
+                    anchors.centerIn: parent
+                    width: parent.width - 10
+                    height: parent.height
+                    bar_width_pct: 0
+                    label.text: "Zcash params downloading:"
+                    label.font.family: 'Montserrat'
+                    label.font.pixelSize: 11
+                    label_width: 180
+                    pct_value.text: "0.00 %"
+                    pct_value.font.family: 'Lato'
+                    pct_value.font.pixelSize: 11
+                }
+
+                DefaultMouseArea
+                {
+                    id: download_mouse_area
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: zcash_params_modal.open()
+                }
+            }
+
+            Connections
+            {
+                target: API.app.zcash_params
+                function onCombinedDownloadStatusChanged()
+                {
+                    const filesizes = General.zcash_params_filesize
+                    let combined_sum = Object.values(filesizes).reduce((total, v) => total + v, 0);
+
+                    let donwloaded_sum = 0
+                    let data = JSON.parse(API.app.zcash_params.get_combined_download_progress())
+                    for (let k in data) {
+                        let v = data[k];
+                        donwloaded_sum += v * filesizes[k]
+                    }
+
+                    let pct = General.formatDouble(donwloaded_sum / combined_sum * 100, 2)
+                    if (pct == 100)
+                    {
+                        API.app.enable_coins(API.app.zcash_params.get_enable_after_download())
+                        status_bar.visible = false
+                        API.app.zcash_params.clear_enable_after_download()
+                    }
+                    else status_bar.visible = true
+                    download_progress.bar_width_pct = pct
+                    download_progress.pct_value.text = pct + "%"
+                }
+            }
+        }
+    }
+
+    // Sidebar, left side
+    Sidebar.Main
+    {
+        id: sidebar
+        enabled: loader.status === Loader.Ready
+
+        onAddCryptoClicked: enable_coin_modal.open()
+        onSettingsClicked: setting_modal.open()
+        onSupportClicked: support_modal.open()
+        onLineSelected:
+        {
+            // If leaving DEX to Wallet, open wallet for current DEX left-selected coin
+            if (currentPage === Dashboard.PageType.DEX && lineType === Dashboard.PageType.Wallet)
+            {
+                const dexLeft = API.app.trading_pg.market_pairs_mdl.left_selected_coin
+                if (dexLeft && dexLeft !== "")
+                    dashboard.current_ticker = dexLeft
+                    API.app.wallet_pg.ticker = dexLeft
+            }
+            currentPage = lineType
+        }
+    }
+
+    ModalLoader
+    {
+        id: gas_info_modal
+        sourceComponent: GasInfoModal {}
+    }
+
+    ModalLoader
+    {
+        id: min_trade_modal
+        sourceComponent: MinTradeModal {}
+    }
+
+    ModalLoader
+    {
+        id: restart_modal
+        sourceComponent: RestartModal {}
+    }
+
+    // Download Zcash Params
+    property alias zcash_params: zcash_params_modal.item
+    ModalLoader
+    {
+        id: zcash_params_modal
+        sourceComponent: ZcashParamsModal
+        {
+        }
+    }
+
+    function onEnablingZCoinStatus(coin, msg, human_date, timestamp)
+    {
+        // Ignore if coin already enabled (e.g. parent chain in batch)
+        console.log(msg)
+        if (msg.search("ZCashParamsNotFound") > -1)
+        {
+            console.log(coin)
+            API.app.zcash_params.enable_after_download(coin)
+            zcash_params_modal.open()
+        }
+    }
+
+    Component.onCompleted:
+    {
+        API.app.notification_mgr.enablingZCoinStatus.connect(onEnablingZCoinStatus)
+    }
+    Component.onDestruction:
+    {
+        API.app.notification_mgr.enablingZCoinStatus.disconnect(onEnablingZCoinStatus)
+    }
+
+    function isSwapDone(status)
+    {
+        switch (status) {
+            case "matching":
+            case "matched":
+            case "ongoing":
+                return false
+            case "successful":
+            case "refunding":
+            case "failed":
+            default:
+                return true
+        }
+    }
+
+    function getStatusColor(status)
+    {
+        switch (status) {
+            case "matching":
+                return Style.colorYellow
+            case "matched":
+            case "ongoing":
+            case "refunding":
+                return Style.colorOrange
+            case "successful":
+                return Dex.CurrentTheme.sidebarLineTextHovered
+            case "failed":
+            default:
+                return DexTheme.warningColor
+        }
+    }
+
+    function getStatusStep(status)
+    {
+        switch (status) {
+            case "matching":
+                return "0/3"
+            case "matched":
+                return "1/3"
+            case "ongoing":
+                return "2/3"
+            case "successful":
+                return Style.successCharacter
+            case "refunding":
+                return Style.warningCharacter
+            case "failed":
+                return Style.failureCharacter
+            default:
+                return "?"
+        }
+    }
+
+    function getStatusFontSize(status)
+    {
+        switch (status) {
+            case "successful":
+                return 16
+            case "refunding":
+                return 16
+            case "failed":
+                return 12
+            case "matching":
+            case "matched":
+            case "ongoing":
+            default:
+                return 9
+        }
+    }
+
+    function getStatusText(status, short_text=false)
+    {
+        switch(status) {
+            case "matching":
+                return short_text ? qsTr("Matching") : qsTr("Order Matching")
+            case "matched":
+                return short_text ? qsTr("Matched") : qsTr("Order Matched")
+            case "ongoing":
+                return short_text ? qsTr("Ongoing") : qsTr("Swap Ongoing")
+            case "successful":
+                return short_text ? qsTr("Successful") : qsTr("Swap Successful")
+            case "refunding":
+                return short_text ? qsTr("Refunding") : qsTr("Refunding")
+            case "failed":
+                return short_text ? qsTr("Failed") : qsTr("Swap Failed")
+            default:
+                return short_text ? qsTr("Unknown") : qsTr("Unknown State")
+        }
+    }
+
+    function getStatusTextWithPrefix(status, short_text = false)
+    {
+        return getStatusStep(status) + " " + getStatusText(status, short_text)
+    }
+
+    // Every case here must mirror a real persisted swap-event name — the taker
+    // and maker each have their own enum (TakerSwapEvent / MakerSwapEvent in
+    // mm2src/mm2_main/src/lp_swap/{taker,maker}_swap.rs on the KDF side), and
+    // an event missing here silently falls through to the raw, untranslated
+    // enum name via the default case below. A validation failure like
+    // MakerPaymentValidateFailed was previously one such gap: the swap was
+    // safely aborted before the taker's payment was ever sent, but the
+    // progress view showed the bare Rust identifier instead of a readable
+    // label, leaving the user unable to tell what actually happened.
+    function getEventText(event_name)
+    {
+        switch (event_name)
+        {
+            case "Started":
+                return qsTr("Started")
+            case "Negotiated":
+                return qsTr("Negotiated")
+            case "TakerFeeSent":
+                return qsTr("Taker fee sent")
+            case "MakerPaymentReceived":
+                return qsTr("Maker payment received")
+            case "MakerPaymentWaitConfirmStarted":
+                return qsTr("Maker payment wait confirm started")
+            case "MakerPaymentValidatedAndConfirmed":
+                return qsTr("Maker payment validated and confirmed")
+            case "TakerPaymentSent":
+                return qsTr("Taker payment sent")
+            case "TakerPaymentSpent":
+                return qsTr("Taker payment spent")
+            case "MakerPaymentSpent":
+                return qsTr("Maker payment spent")
+            case "Finished":
+                return qsTr("Finished")
+            case "StartFailed":
+                return qsTr("Start failed")
+            case "NegotiateFailed":
+                return qsTr("Negotiate failed")
+            case "TakerFeeValidateFailed":
+                return qsTr("Taker fee validate failed")
+            case "MakerPaymentTransactionFailed":
+                return qsTr("Maker payment transaction failed")
+            case "MakerPaymentDataSendFailed":
+                return qsTr("Maker payment Data send failed")
+            case "MakerPaymentWaitConfirmFailed":
+                return qsTr("Maker payment wait confirm failed")
+            case "TakerPaymentValidateFailed":
+                return qsTr("Taker payment validate failed")
+            case "TakerPaymentWaitConfirmFailed":
+                return qsTr("Taker payment wait confirm failed")
+            case "TakerPaymentSpendFailed":
+                return qsTr("Taker payment spend failed")
+            case "MakerPaymentWaitRefundStarted":
+                return qsTr("Maker payment wait refund started")
+            case "MakerPaymentRefunded":
+                return qsTr("Maker payment refunded")
+            case "MakerPaymentRefundFailed":
+                return qsTr("Maker payment refund failed")
+            // --- Taker-side events absent from the switch above ---
+            case "TakerFeeSendFailed":
+                return qsTr("Taker fee send failed")
+            case "TakerPaymentInstructionsReceived":
+                return qsTr("Taker payment instructions obtained")
+            case "MakerPaymentValidateFailed":
+                return qsTr("Maker payment validate failed")
+            case "WatcherMessageSent":
+                return qsTr("Watcher message sent")
+            case "TakerPaymentTransactionFailed":
+                return qsTr("Taker payment transaction failed")
+            case "TakerPaymentDataSendFailed":
+                return qsTr("Taker payment data send failed")
+            case "TakerPaymentWaitForSpendFailed":
+                return qsTr("Taker payment wait for spend failed")
+            case "MakerPaymentSpendConfirmed":
+                return qsTr("Maker payment spend confirmed")
+            case "MakerPaymentSpendConfirmFailed":
+                return qsTr("Maker payment spend confirm failed")
+            case "MakerPaymentSpentByWatcher":
+                return qsTr("Maker payment spent by watcher")
+            case "MakerPaymentSpendFailed":
+                return qsTr("Maker payment spend failed")
+            case "TakerPaymentWaitRefundStarted":
+                return qsTr("Taker payment wait refund started")
+            case "TakerPaymentRefundStarted":
+                return qsTr("Taker payment refund started")
+            case "TakerPaymentRefunded":
+                return qsTr("Taker payment refunded")
+            case "TakerPaymentRefundFinished":
+                return qsTr("Taker payment refund finished")
+            case "TakerPaymentRefundedByWatcher":
+                return qsTr("Taker payment refunded by watcher")
+            case "TakerPaymentRefundFailed":
+                return qsTr("Taker payment refund failed")
+            // --- Maker-side events absent from the switch above ---
+            case "MakerPaymentInstructionsReceived":
+                return qsTr("Maker payment instructions obtained")
+            case "TakerFeeValidated":
+                return qsTr("Taker fee validated")
+            case "MakerPaymentSent":
+                return qsTr("Maker payment sent")
+            case "TakerPaymentReceived":
+                return qsTr("Taker payment received")
+            case "TakerPaymentWaitConfirmStarted":
+                return qsTr("Taker payment wait confirm started")
+            case "TakerPaymentValidatedAndConfirmed":
+                return qsTr("Taker payment validated and confirmed")
+            case "TakerPaymentSpendConfirmStarted":
+                return qsTr("Taker payment spend wait confirm started")
+            case "TakerPaymentSpendConfirmed":
+                return qsTr("Taker payment spend confirmed")
+            case "TakerPaymentSpendConfirmFailed":
+                return qsTr("Taker payment spend confirm failed")
+            case "MakerPaymentRefundStarted":
+                return qsTr("Maker payment refund started")
+            case "MakerPaymentRefundFinished":
+                return qsTr("Maker payment refund finished")
+            default:
+                return qsTr(event_name)
+        }
+    }
+}

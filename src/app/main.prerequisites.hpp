@@ -1,0 +1,478 @@
+/******************************************************************************
+ * Copyright © 2013-2024 The Komodo Platform Developers.                      *
+ *                                                                            *
+ * See the AUTHORS, DEVELOPER-AGREEMENT and LICENSE files at                  *
+ * the top-level directory of this distribution for the individual copyright  *
+ * holder information and the developer policies on copyright and licensing.  *
+ *                                                                            *
+ * Unless otherwise agreed in a custom licensing agreement, no part of the    *
+ * Komodo Platform software, including this file may be copied, modified,     *
+ * propagated or distributed except according to the terms contained in the   *
+ * LICENSE file                                                               *
+ *                                                                            *
+ * Removal or modification of this copyright notice is prohibited.            *
+ *                                                                            *
+ ******************************************************************************/
+
+#include "atomicdex/pch.hpp"
+#include <chrono>
+#include <csignal>
+#include <QApplication>
+#include <QDebug>
+#include <QDesktopWidget>
+#include <QQmlApplicationEngine>
+#include <QScreen>
+#include <QSettings>
+#include <QWindow>
+#include <QtGlobal>
+#include <QtQml>
+#include <QFontDatabase>
+#include <QtWebEngine>
+#include <QWebEngineProfile>
+#include <Qaterial/Qaterial.hpp>
+#include <QSslSocket>
+#include <sodium/core.h>
+#include <wally.hpp>
+#include "app.hpp"
+#include "atomicdex/constants/dex.constants.hpp"
+#include "atomicdex/models/qt.portfolio.model.hpp"
+#include "atomicdex/utilities/kill.hpp"
+#include "atomicdex/utilities/qt.utilities.hpp"
+#include "atomicdex/filesystem.qml.hpp"
+#include "atomicdex/utilities/log.prerequisites.hpp"
+#include "atomicdex/utilities/customrequestinterceptor.h"
+
+#ifdef __APPLE__
+#    include "atomicdex/platform/osx/manager.hpp"
+#    include <sys/sysctl.h>
+#endif
+
+static void
+qt_message_handler(QtMsgType type, [[maybe_unused]] const QMessageLogContext& context, const QString& msg)
+{
+    const auto localMsg = msg.toLocal8Bit();
+    switch (type)
+    {
+    case QtDebugMsg:
+        SPDLOG_DEBUG("{}", localMsg.constData());
+        break;
+    case QtInfoMsg:
+        SPDLOG_INFO("{}", localMsg.constData());
+        break;
+    case QtWarningMsg:
+        SPDLOG_WARN("{}", localMsg.constData());
+        break;
+    case QtCriticalMsg:
+        SPDLOG_ERROR("{}", localMsg.constData());
+        break;
+    case QtFatalMsg:
+        SPDLOG_ERROR("{}", localMsg.constData());
+        abort();
+    }
+}
+
+static void
+signal_handler(int signal)
+{
+    SPDLOG_ERROR("sigabort received, cleaning kdf");
+    atomic_dex::kill_executable(atomic_dex::g_dex_api);
+    std::exit(signal);
+}
+
+static void
+connect_signals_handler()
+{
+    SPDLOG_INFO("connecting signal SIGABRT to the signal handler");
+    std::signal(SIGABRT, &signal_handler);
+    std::signal(SIGSEGV, &signal_handler);
+    std::signal(SIGTERM, &signal_handler);
+}
+
+static void
+init_wally()
+{
+    [[maybe_unused]] auto wally_res = wally_init(0);
+    assert(wally_res == WALLY_OK);
+    SPDLOG_INFO("wally successfully initialized");
+}
+
+static void
+init_sodium()
+{
+    //! Sodium Initialization
+    [[maybe_unused]] auto sodium_return_value = sodium_init();
+    assert(sodium_return_value == 0); //< This is not executed when build = Release
+    SPDLOG_INFO("libsodium successfully initialized");
+}
+
+static void
+clean_previous_run()
+{
+    SPDLOG_INFO("cleaning previous kdf instance");
+    atomic_dex::kill_executable(atomic_dex::g_dex_api);
+}
+
+static void init_logging()
+{
+    constexpr size_t qsize_spdlog             = 10240;
+    constexpr size_t spdlog_thread_count      = 2;
+    constexpr size_t spdlog_max_file_size     = 7777777;
+    constexpr size_t spdlog_max_file_rotation = 3;
+
+    std::filesystem::path path = atomic_dex::utils::get_atomic_dex_current_log_file();
+    spdlog::init_thread_pool(qsize_spdlog, spdlog_thread_count);
+    auto tp = spdlog::thread_pool();
+    auto stdout_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+
+#if defined(_WIN32) || defined(WIN32)
+    auto rotating_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path.wstring(), spdlog_max_file_size, spdlog_max_file_rotation);
+#else
+    auto rotating_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path.string(), spdlog_max_file_size, spdlog_max_file_rotation);
+#endif
+
+#if defined(DEBUG) || defined(_WIN32) || defined(WIN32)
+    std::vector<spdlog::sink_ptr> sinks{stdout_sink, rotating_sink};
+#else
+    std::vector<spdlog::sink_ptr> sinks{rotating_sink};
+#endif
+
+    auto logger = std::make_shared<spdlog::async_logger>("log_mt", sinks.begin(), sinks.end(), tp, spdlog::async_overflow_policy::block);
+    spdlog::register_logger(logger);
+    spdlog::set_default_logger(logger);
+    spdlog::set_level(spdlog::level::trace);
+    spdlog::flush_on(spdlog::level::err);
+    spdlog::flush_every(std::chrono::seconds(7));
+    spdlog::set_pattern("[%T] [%^%l%$] [%s:%#] [%t]: %v");
+}
+
+static void
+init_dpi()
+{
+    SPDLOG_INFO("initializing high dpi support");
+    bool should_floor = false;
+#if defined(_WIN32) || defined(WIN32) || defined(__linux__)
+    {
+        int          ac = 0;
+        QApplication tmp(ac, nullptr);
+        double       min_window_size = 800.0;
+        auto         screens         = tmp.screens();
+        for (auto&& cur_screen: screens)
+        {
+            SPDLOG_DEBUG("physical dpi: {}", cur_screen->physicalDotsPerInch());
+            SPDLOG_DEBUG("logical dpi: {}", cur_screen->logicalDotsPerInch());
+            double scale = cur_screen->logicalDotsPerInch() / 96.0;
+            SPDLOG_DEBUG("scale: {}", scale);
+            double height = cur_screen->availableSize().height();
+            SPDLOG_DEBUG("height: {}", height);
+            if (scale * min_window_size > height)
+            {
+                should_floor = true;
+                SPDLOG_DEBUG("should floor");
+            }
+        }
+    }
+#endif
+    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+        should_floor ? Qt::HighDpiScaleFactorRoundingPolicy::Floor : Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+    QGuiApplication::setAttribute(should_floor ? Qt::AA_DisableHighDpiScaling : Qt::AA_EnableHighDpiScaling);
+    SPDLOG_INFO("dpi settings finished");
+}
+
+static void
+clean_wally()
+{
+    [[maybe_unused]] auto wallet_exit_res = wally_cleanup(0);
+    assert(wallet_exit_res == WALLY_OK);
+    SPDLOG_INFO("wally successfully cleaned");
+}
+
+static void
+init_timezone_db()
+{
+    SPDLOG_INFO("Init timezone db");
+#if defined(_WIN32) || defined(WIN32)
+    try
+    {
+        using namespace std::string_literals;
+        auto install_db_tz_path = std::make_unique<std::filesystem::path>(ag::core::assets_real_path() / "tools" / "timezone" / "tzdata");
+        date::set_install(install_db_tz_path->string());
+        SPDLOG_INFO("Timezone db successfully initialized");
+    }
+    catch (const std::exception& error)
+    {
+        //SPDLOG_ERROR("Couldn't initialize timezone DB, you will get UTC time instead");
+        SPDLOG_ERROR("exception in init_timezone_db: {}", error.what());
+    }
+#endif
+}
+
+static void
+setup_default_themes()
+{
+    const std::filesystem::path theme_path = atomic_dex::utils::get_themes_path();
+    std::filesystem::path       original_theme_path{ag::core::assets_real_path() / "themes"};
+    std::error_code ec;
+
+    LOG_PATH_CMP("Checking for setup default themes - theme_path: {} original_theme_path: {}", theme_path, original_theme_path);
+    LOG_PATH("copying default themes into directory: {}", theme_path);
+    //std::filesystem::remove_all(theme_path);
+    std::filesystem::copy(original_theme_path, theme_path,  std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec)
+    {
+        SPDLOG_ERROR("std::filesystem::error: {}", ec.message());
+    }
+
+    ec.clear();
+
+    //! Logo
+    {
+        const std::filesystem::path logo_path = atomic_dex::utils::get_logo_path();
+        std::filesystem::path       original_logo_path{ag::core::assets_real_path() / "logo"};
+
+        LOG_PATH_CMP("Checking for setup default logo - logo_path: {} original_logo_path: {}", logo_path, original_logo_path);
+        //std::filesystem::remove_all(logo_path);
+        std::filesystem::copy(original_logo_path, logo_path, std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
+        LOG_PATH("copying default logo into directory: {}", logo_path);
+        if (ec)
+        {
+            SPDLOG_ERROR("std::filesystem::error: {}", ec.message());
+        }
+    }
+}
+
+static void
+check_settings_reconfiguration(const std::filesystem::path& path)
+{
+    SPDLOG_INFO("Checking for settings ini reconfiguration");
+    using namespace atomic_dex::utils;
+    using namespace atomic_dex;
+    const std::filesystem::path previous_path = get_atomic_dex_data_folder() / get_precedent_raw_version() / "configs" / "cfg.ini";
+    if (std::filesystem::exists(previous_path) && !std::filesystem::exists(path))
+    {
+        std::error_code ec;
+        LOG_PATH_CMP("Copying {} to {}", previous_path, path);
+        std::filesystem::copy(previous_path, path, ec);
+        if (ec)
+        {
+            SPDLOG_ERROR("error occured when copying previous cfg.ini : {}", ec.message());
+        }
+
+        SPDLOG_INFO("Deleting previous cfg after reconfiguring it");
+        ec.clear();
+        std::filesystem::remove_all(get_atomic_dex_data_folder() / get_precedent_raw_version(), ec);
+        if (ec)
+        {
+            SPDLOG_ERROR("error occured when deleting previous path");
+        }
+    }
+    SPDLOG_INFO("reconfiguration for settings finished");
+}
+
+static void
+handle_settings(QSettings& settings)
+{
+    auto create_settings_functor = [&settings](QString settings_name, QVariant value)
+    {
+        if (!settings.contains(settings_name))
+        {
+            SPDLOG_INFO("Settings {} doesn't exist yet for this application, creating now", settings_name.toStdString());
+            settings.setValue(settings_name, value);
+        }
+        else
+        {
+            SPDLOG_INFO("Settings {} already exist - skipping", settings_name.toStdString());
+        }
+    };
+    SPDLOG_INFO("file name settings: {}", settings.fileName().toStdString());
+    create_settings_functor("CurrentTheme", QString("Default - Dark"));
+
+#if defined(_WIN32) || defined(WIN32)
+    create_settings_functor("ThemePath", QString::fromStdWString(atomic_dex::utils::get_themes_path().wstring()));
+#else
+    create_settings_functor("ThemePath", QString::fromStdString(atomic_dex::utils::get_themes_path().string()));
+#endif
+    using namespace std::chrono;
+    int timestamp  = duration_cast<seconds>(system_clock::now().time_since_epoch()).count() - 86400 * 2;
+    create_settings_functor("AutomaticUpdateOrderBot", QVariant(false));
+    create_settings_functor("AvailableLang", QStringList{"en", "es", "fr", "de", "tr", "ru"});
+    create_settings_functor("CurrentLang", QString("en"));
+    create_settings_functor("PirateSyncDate", timestamp);
+    create_settings_functor("UseSyncDate", false);
+    create_settings_functor("DefaultTradingMode", TradingMode::Pro);
+    create_settings_functor("FontMode", QQuickWindow::TextRenderType::QtTextRendering);
+}
+
+inline int
+run_app(int argc, char** argv)
+{
+    SPDLOG_DEBUG("Installing qt_message_handler");
+    qInstallMessageHandler(&qt_message_handler);
+    SPDLOG_DEBUG("SSL: {} {} {}", QSslSocket::supportsSsl(), QSslSocket::sslLibraryBuildVersionString().toStdString(), QSslSocket::sslLibraryVersionString().toStdString());
+
+    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-web-security");
+    {
+        //! Qt 5.15 ships Chromium 87, whose GPU process crashes on newer macOS
+        //! (EXC_BAD_ACCESS in Chrome_InProcGpuThread, observed on macOS 15/arm64
+        //! with conda-forge qt-webengine 5.15.9). Disable GPU acceleration so
+        //! QtWebEngine falls back to software rendering. Any user-provided
+        //! QTWEBENGINE_CHROMIUM_FLAGS are preserved.
+        QByteArray chromium_flags = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
+        if (!chromium_flags.isEmpty() && !chromium_flags.endsWith(' '))
+        {
+            chromium_flags += ' ';
+        }
+        chromium_flags += "--disable-gpu";
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", chromium_flags);
+    }
+#if defined(Q_OS_LINUX)
+    // Force the app to run via X11/XWayland layer cleanly to avoid missing wayland plugin warnings
+    qputenv("QT_QPA_PLATFORM", "xcb");
+#endif
+#if defined(Q_OS_MACOS)
+    // https://bugreports.qt.io/browse/QTBUG-89379
+    qputenv("QT_ENABLE_GLYPH_CACHE_WORKAROUND", "1");
+    qputenv("QML_USE_GLYPHCACHE_WORKAROUND", "1");
+    std::filesystem::path old_path    = std::filesystem::path(std::getenv("HOME")) / ".atomic_qt";
+    std::filesystem::path target_path = atomic_dex::utils::get_atomic_dex_data_folder();
+    SPDLOG_INFO("{} exists -> {}", old_path.string(), std::filesystem::exists(old_path));
+    SPDLOG_INFO("{} exists -> {}", target_path.string(), std::filesystem::exists(target_path));
+    if (std::filesystem::exists(old_path) && !std::filesystem::exists(target_path))
+    {
+        SPDLOG_INFO("Renaming: {} to {}", old_path.string(), target_path.string());
+        QDir dir;
+        if (!dir.rename(QString::fromStdString(old_path.string()), QString::fromStdString(target_path.string())))
+        {
+            SPDLOG_ERROR("Cannot rename directory {} to {} - aborting", old_path.string(), target_path.string());
+            exit(1);
+        }
+    }
+#endif
+
+    init_logging();
+    SPDLOG_INFO("{} version: {}", DEX_NAME, atomic_dex::get_version_display_string());
+    connect_signals_handler();
+    init_timezone_db();
+    init_wally();
+    init_sodium();
+    clean_previous_run();
+    setup_default_themes();
+    std::filesystem::path settings_path = (atomic_dex::utils::get_current_configs_path() / "cfg.ini");
+    check_settings_reconfiguration(settings_path);
+    init_dpi();
+
+    //! App declaration
+    atomic_dex::application atomic_app;
+    QSettings&              settings = atomic_app.get_registry().ctx().get<QSettings>();
+    handle_settings(settings);
+    atomic_app.post_handle_settings();
+
+    int res = 0;
+
+    //! Qt utilities declaration.
+    atomic_dex::qt_utilities qt_utilities;
+    atomic_dex::filesystem qml_filesystem;
+
+    //! QT
+    QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+    QtWebEngine::initialize();
+    std::shared_ptr<QApplication> app = std::make_shared<QApplication>(argc, argv);
+
+    app->setWindowIcon(QIcon(":/assets/images/logo/dex-logo.png"));
+    app->setOrganizationName("KomodoPlatform");
+    app->setOrganizationDomain("com");
+    QQmlApplicationEngine engine;
+
+    SPDLOG_INFO("Registering WebEngine network request cache interceptor and configuring storage caps.");
+    CustomRequestInterceptor *interceptor = new CustomRequestInterceptor(app.get());
+    QWebEngineProfile* defaultProfile = QWebEngineProfile::defaultProfile();
+    defaultProfile->setUrlRequestInterceptor(interceptor);
+    defaultProfile->setHttpCacheType(QWebEngineProfile::DiskHttpCache);
+    defaultProfile->setHttpCacheMaximumSize(10 * 1024 * 1024); // 10 MB
+    SPDLOG_INFO("WebEngine Persistent Storage Path: {}", defaultProfile->persistentStoragePath().toStdString());
+    SPDLOG_INFO("WebEngine Network Cache Path: {}", defaultProfile->cachePath().toStdString());
+
+    atomic_app.set_qt_app(app, &engine);
+    SPDLOG_INFO("post set_qt_app");
+
+    //! QT QML
+    engine.addImportPath("qrc:///");
+    qRegisterMetaType<MarketMode>("MarketMode");
+    qmlRegisterUncreatableType<atomic_dex::MarketModeGadget>("AtomicDEX.MarketMode", 1, 0, "MarketMode", "Not creatable as it is an enum type");
+    qRegisterMetaType<TradingMode>("TradingMode");
+    qmlRegisterUncreatableType<atomic_dex::TradingModeGadget>("AtomicDEX.TradingMode", 1, 0, "TradingMode", "Not creatable as it is an enum type");
+    qRegisterMetaType<TradingError>("TradingError");
+    qRegisterMetaType<SelectedOrderStatus>("SelectedOrderStatus");
+    qmlRegisterUncreatableType<atomic_dex::SelectedOrderGadget>("AtomicDEX.SelectedOrderStatus", 1, 0, "SelectedOrderStatus", "Not creatable as it is an enum type");
+    qmlRegisterUncreatableType<atomic_dex::TradingErrorGadget>("AtomicDEX.TradingError", 1, 0, "TradingError", "Not creatable as it is an enum type");
+    qRegisterMetaType<CoinType>("CoinType");
+    qmlRegisterUncreatableType<atomic_dex::CoinTypeGadget>("AtomicDEX.CoinType", 1, 0, "CoinType", "Not creatable as it is an enum type");
+    SPDLOG_INFO("QML Enum created");
+
+    const QFont fixedFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    engine.rootContext()->setContextProperty("atomic_fixed_font", fixedFont);
+    engine.rootContext()->setContextProperty("atomic_app", &atomic_app);
+    engine.rootContext()->setContextProperty("atomic_app_name", QString{DEX_NAME});
+    engine.rootContext()->setContextProperty("atomic_app_website_url", QString{DEX_WEBSITE_URL});
+    engine.rootContext()->setContextProperty("atomic_app_support_url", QString{DEX_SUPPORT_URL});
+    engine.rootContext()->setContextProperty("atomic_app_discord_url", QString{DEX_DISCORD_URL});
+    engine.rootContext()->setContextProperty("atomic_app_twitter_url", QString{DEX_TWITTER_URL});
+    engine.rootContext()->setContextProperty("atomic_app_primary_coin", QString{DEX_PRIMARY_COIN});
+    engine.rootContext()->setContextProperty("atomic_app_secondary_coin", QString{DEX_SECOND_PRIMARY_COIN});
+    engine.rootContext()->setContextProperty("atomic_qt_utilities", &qt_utilities);
+
+    #if defined(_WIN32) || defined(WIN32)
+        engine.rootContext()->setContextProperty("atomic_cfg_file", QString::fromStdWString((atomic_dex::utils::get_current_configs_path() / "cfg.ini").wstring()));
+        engine.rootContext()->setContextProperty("atomic_logo_path", QString::fromStdWString((atomic_dex::utils::get_atomic_dex_data_folder() / "logo").wstring()));
+    #else
+        engine.rootContext()->setContextProperty("atomic_cfg_file", QString::fromStdString((atomic_dex::utils::get_current_configs_path() / "cfg.ini").string()));
+        engine.rootContext()->setContextProperty("atomic_logo_path", QString::fromStdString((atomic_dex::utils::get_atomic_dex_data_folder() / "logo").string()));
+    #endif
+
+    engine.rootContext()->setContextProperty("atomic_settings", &settings);
+    engine.rootContext()->setContextProperty("dex_current_version", QString::fromStdString(atomic_dex::get_version()));
+    engine.rootContext()->setContextProperty("qtversion", QString(qVersion()));
+    engine.rootContext()->setContextProperty("DexFilesystem", &qml_filesystem);
+    SPDLOG_INFO("QML context properties created");
+
+    qaterial::loadQmlResources(false);
+    qaterial::registerQmlTypes("Qaterial", 1, 0);
+    SPDLOG_INFO("Qaterial type created");
+
+    engine.addImportPath("qrc:/imports");
+    engine.addImportPath("qrc:/Constants");
+    qmlRegisterSingletonType(QUrl("qrc:/Dex/Constants/DexTheme.qml"), "App", 1, 0, "DexTheme");
+    qmlRegisterSingletonType(QUrl("qrc:/Dex/Constants/DexTypo.qml"), "App", 1, 0, "DexTypo");
+    qmlRegisterSingletonType(QUrl("qrc:/Dex/Constants/General.qml"), "App", 1, 0, "General");
+    qmlRegisterSingletonType(QUrl("qrc:/Dex/Constants/Style.qml"), "App", 1, 0, "Style");
+    qmlRegisterSingletonType(QUrl("qrc:/Dex/Constants/API.qml"), "App", 1, 0, "API");
+    qRegisterMetaType<atomic_dex::t_portfolio_roles>("PortfolioRoles");
+    SPDLOG_INFO("QML singleton created");
+
+    SPDLOG_INFO("Load qml engine");
+    engine.rootContext()->setContextProperty("debug_bar", QVariant(false));
+    const QUrl url(QStringLiteral("qrc:/Dex/main.qml"));
+    QObject::connect(
+        &engine, &QQmlApplicationEngine::objectCreated, app.get(),
+        [url](QObject* obj, const QUrl& objUrl)
+        {
+            if ((obj == nullptr) && url == objUrl)
+            {
+                QCoreApplication::exit(-1);
+            }
+        },
+        Qt::QueuedConnection);
+
+    engine.load(url);
+    SPDLOG_INFO("qml engine successfully loaded");
+
+#ifdef __APPLE__
+    QWindowList windows = QGuiApplication::allWindows();
+    QWindow*    win     = windows.first();
+    atomic_dex::mac_window_setup(win->winId());
+#endif
+
+    atomic_app.launch();
+    res = app->exec();
+    clean_wally();
+    return res;
+}
