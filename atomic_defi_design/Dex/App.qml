@@ -157,6 +157,19 @@ DefaultRectangle
         visible: false
     }
 
+    // Update Modal
+    NewUpdateModal
+    {
+        id: newUpdateModal
+        visible: false
+    }
+
+    UpdateInvalidChecksum
+    {
+        id: update_invalid_checksum
+        visible: false
+    }
+
     // Recover funds result modal
     LogModal
     {

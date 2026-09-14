@@ -46,6 +46,7 @@ namespace atomic_dex::http
     {
       public:
         void set_content_type(std::string content_type);
+        void set_header(std::string key, std::string value);
         [[nodiscard]] const std::unordered_map<std::string, std::string>& values() const;
 
       private:

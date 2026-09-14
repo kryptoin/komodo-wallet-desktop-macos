@@ -48,6 +48,7 @@
 #include "atomicdex/services/price/defi.stats.hpp"
 #include "atomicdex/services/price/global.provider.hpp"
 #include "atomicdex/services/update/zcash.params.service.hpp"
+#include "atomicdex/services/update/update.checker.service.hpp"
 #include "atomicdex/services/sync/timesync.checker.service.hpp"
 #include "atomicdex/services/internet/internet.checker.service.hpp"
 #include "atomicdex/utilities/qt.utilities.hpp"
@@ -76,6 +77,7 @@ namespace atomic_dex
         Q_PROPERTY(timesync_checker_service* timesyncCheckerService READ get_timesync_checker_service NOTIFY timesyncCheckerServiceChanged)
         Q_PROPERTY(internet_service_checker* internet_checker READ get_internet_checker NOTIFY internetCheckerChanged)
         Q_PROPERTY(zcash_params_service* zcash_params READ get_zcash_params_service NOTIFY zcashParamsServiceChanged)
+        Q_PROPERTY(update_checker_service* updateCheckerService READ get_update_checker_service NOTIFY updateCheckerServiceChanged)
 
         //! Private function
         void connect_signals();
@@ -136,6 +138,7 @@ namespace atomic_dex
         timesync_checker_service*                get_timesync_checker_service() const;
         internet_service_checker*                get_internet_checker() const;
         [[nodiscard]] zcash_params_service*      get_zcash_params_service() const;
+        update_checker_service*                get_update_checker_service() const;
         exporter_service*                        get_exporter_service() const;
 
         void set_qt_app(std::shared_ptr<QApplication> app, QQmlApplicationEngine* qml_engine);
@@ -180,6 +183,7 @@ namespace atomic_dex
         void timesyncCheckerServiceChanged();
         void internetCheckerChanged();
         void zcashParamsServiceChanged();
+        void updateCheckerServiceChanged();
         void tradingPageChanged();
         void settingsPageChanged();
         void exporterServiceChanged();

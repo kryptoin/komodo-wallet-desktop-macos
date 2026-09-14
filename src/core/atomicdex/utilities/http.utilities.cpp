@@ -42,6 +42,12 @@ namespace atomic_dex::http
         m_values["Content-Type"] = std::move(content_type);
     }
 
+    void
+    headers::set_header(std::string key, std::string value)
+    {
+        m_values[std::move(key)] = std::move(value);
+    }
+
     const std::unordered_map<std::string, std::string>&
     headers::values() const
     {
