@@ -158,6 +158,7 @@ atomic_legacy_imgui/
 /vendor/coins/
 /local/
 /tools/
+/v2
 
 # Atomic DEX CI & Installer Tools (generated copies only in this tree; the
 # installer templates themselves are not present)

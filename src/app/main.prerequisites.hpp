@@ -17,10 +17,14 @@
 #include "atomicdex/pch.hpp"
 #include <chrono>
 #include <csignal>
+#include <thread>
 #include <QApplication>
 #include <QDebug>
 #include <QDesktopWidget>
+#include <QLockFile>
+#include <QMessageBox>
 #include <QQmlApplicationEngine>
+#include <QTcpSocket>
 #include <QScreen>
 #include <QSettings>
 #include <QWindow>
@@ -86,6 +90,12 @@ connect_signals_handler()
     std::signal(SIGABRT, &signal_handler);
     std::signal(SIGSEGV, &signal_handler);
     std::signal(SIGTERM, &signal_handler);
+#if !defined(_WIN32) && !defined(WIN32)
+    //! SIGBUS (e.g. the QtQuick accessibility crash observed on newer macOS):
+    //! also clean the backend so a crashed session never leaves a stale
+    //! kdf_kwd holding the RPC port for the next launch.
+    std::signal(SIGBUS, &signal_handler);
+#endif
 }
 
 static void
@@ -110,6 +120,90 @@ clean_previous_run()
 {
     SPDLOG_INFO("cleaning previous kdf instance");
     atomic_dex::kill_executable(atomic_dex::g_dex_api);
+}
+
+static bool
+is_rpc_port_busy(const char* host, quint16 port, int timeout_ms)
+{
+    QTcpSocket socket;
+    socket.connectToHost(QString::fromLatin1(host), port);
+    return socket.waitForConnected(timeout_ms);
+}
+
+static void
+show_startup_error(const QString& title, const QString& text)
+{
+    //! ERROR flushes to disk immediately (flush_on err), so the message
+    //! survives even if the process dies right after.
+    SPDLOG_ERROR("startup guard: {}", text.toStdString());
+    if (qgetenv("QT_QPA_PLATFORM") == "offscreen")
+    {
+        return; //< headless/CI: never block on a modal dialog.
+    }
+    QMessageBox::critical(nullptr, title, text);
+}
+
+//! Guards against the two overlapping-instance failure modes observed on
+//! Apple Silicon: a second GUI launched while one is already running, and a
+//! stale kdf_kwd (left behind by a crash) still holding the RPC port.
+//! Returns 0 when startup may proceed, 1 when it must abort with an error
+//! already shown to the user.
+static int
+enforce_single_instance_and_clean_backend()
+{
+    const std::filesystem::path data_folder = atomic_dex::utils::get_atomic_dex_data_folder();
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(data_folder, ec);
+        if (ec)
+        {
+            SPDLOG_WARN("cannot create data folder {}: {}", data_folder.string(), ec.message());
+        }
+    }
+
+    //! QLockFile is held until process exit (kernel releases it even on
+    //! SIGBUS/SIGKILL), so a crashed session never blocks the next launch.
+    static QLockFile app_lock(atomic_dex::std_path_to_qstring(data_folder / "komodo-wallet.lock"));
+    if (!app_lock.tryLock())
+    {
+        show_startup_error(
+            QString::fromLatin1(DEX_NAME) + QStringLiteral(" already running"),
+            QStringLiteral("Another %1 instance is already running.\n\n"
+                           "Two instances must never share one data folder: the second one would "
+                           "kill the first one's backend and corrupt wallet state. "
+                           "Activate the existing window instead of starting a new one.")
+                .arg(QString::fromLatin1(DEX_NAME)));
+        return 1;
+    }
+
+    //! Only now is it safe to reap a stale backend: no live sibling instance
+    //! exists whose backend we could disrupt.
+    clean_previous_run();
+
+    //! A terminating backend needs a moment to release the RPC port; a backend
+    //! that survives the grace period is stuck and must block startup loudly
+    //! instead of limping into a backend-connection failure later.
+    constexpr const char* rpc_host = "127.0.0.1";
+    const quint16         rpc_port = static_cast<quint16>(QString::fromLatin1(DEX_RPCPORT).toUShort());
+    bool                  busy     = is_rpc_port_busy(rpc_host, rpc_port, 500);
+    for (int i = 0; busy && i < 6; ++i)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        busy = is_rpc_port_busy(rpc_host, rpc_port, 500);
+    }
+    if (busy)
+    {
+        show_startup_error(
+            QStringLiteral("Previous backend still running"),
+            QStringLiteral("A previous session's backend is still listening on %1:%2.\n\n"
+                           "The stale '%3' process survived a crash and this instance cannot safely start. "
+                           "Terminate it (e.g. `killall %3`) and relaunch.")
+                .arg(QString::fromLatin1(rpc_host))
+                .arg(rpc_port)
+                .arg(QString::fromLatin1(atomic_dex::g_dex_api)));
+        return 1;
+    }
+    return 0;
 }
 
 static void init_logging()
@@ -354,7 +448,9 @@ run_app(int argc, char** argv)
     init_timezone_db();
     init_wally();
     init_sodium();
-    clean_previous_run();
+    //! Backend cleanup moved into enforce_single_instance_and_clean_backend()
+    //! (after QApplication): killing a stale backend is only safe once the
+    //! single-instance lock proves no live sibling exists to disrupt.
     setup_default_themes();
     std::filesystem::path settings_path = (atomic_dex::utils::get_current_configs_path() / "cfg.ini");
     check_settings_reconfiguration(settings_path);
@@ -376,6 +472,13 @@ run_app(int argc, char** argv)
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
     QtWebEngine::initialize();
     std::shared_ptr<QApplication> app = std::make_shared<QApplication>(argc, argv);
+
+    //! Refuse to run on top of a previous instance or a stale backend, with
+    //! an error dialog, instead of corrupting state or crashing later.
+    if (const int guard_res = enforce_single_instance_and_clean_backend(); guard_res != 0)
+    {
+        return guard_res;
+    }
 
     app->setWindowIcon(QIcon(":/assets/images/logo/dex-logo.png"));
     app->setOrganizationName("KomodoPlatform");

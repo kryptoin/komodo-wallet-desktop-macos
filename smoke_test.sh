@@ -3,6 +3,8 @@
 # smoke_test.sh — basic smoke tests: can the DEX actually run?
 #
 # Checks (each reported PASS/FAIL, non-zero exit if any fail):
+#   0. Pre-flight: no previous app/backend process still running (a stale
+#      kdf_kwd or a live sibling instance would invalidate every later check)
 #   1. App binary exists and is native arm64
 #   2. App links the expected Qt5 modules (WebEngine, Quick, Core)
 #   3. KDF backend binary exists and is universal2 (arm64 slice present)
@@ -52,6 +54,22 @@ cleanup() {
 trap cleanup EXIT
 
 # ------------------------------------------------------------------ checks
+check_no_previous_process() {
+    local strays=""
+    if pgrep -f "komodo-wallet.app/Contents/MacOS/komodo-wallet" >/dev/null 2>&1; then
+        strays="$strays app"
+    fi
+    if pgrep -f "assets/tools/kdf/kdf_kwd" >/dev/null 2>&1; then
+        strays="$strays kdf"
+    fi
+    if [[ -n "$strays" ]]; then
+        fail "previous process still running ($strays ) -- terminate leftovers first (e.g. killall kdf_kwd), then re-run"
+        return 1
+    fi
+    pass "no previous app/kdf process running"
+    return 0
+}
+
 check_app_binary() {
     if [[ -x "$APP_BIN" ]]; then
         pass "app binary exists ($APP_BIN)"
@@ -225,6 +243,11 @@ check_app_shutdown() {
 
 # ------------------------------------------------------------------ main
 smoke_log "Komodo Wallet smoke tests (timeout ${TIMEOUT}s)"
+if ! check_no_previous_process; then
+    smoke_log "----------------------------------------"
+    smoke_log "RESULT: $PASS passed, $FAIL failed"
+    exit 1
+fi
 check_app_binary
 check_app_arch
 check_qt_linkage

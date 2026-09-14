@@ -27,7 +27,16 @@ add_library(spdlog INTERFACE)
 target_link_libraries(spdlog INTERFACE spdlog::spdlog)
 
 #find_package(absl CONFIG REQUIRED)
-find_package(Boost COMPONENTS random system thread REQUIRED)
+## Boost >= 1.87 ships `system` as header-only (no compiled lib / no
+## boost_system CMake config in Homebrew bottles), and v2/src links
+## Boost::filesystem, so request the compiled libs we actually need here.
+find_package(Boost COMPONENTS filesystem random thread REQUIRED)
+## Compatibility alias: some third-party configs still link Boost::system.
+## Point it at the header-only target so existing code keeps working.
+if (NOT TARGET Boost::system)
+    add_library(Boost::system INTERFACE IMPORTED)
+    set_property(TARGET Boost::system APPEND PROPERTY INTERFACE_LINK_LIBRARIES Boost::headers)
+endif ()
 if (CONAN_ENABLED)
     if (NOT TARGET Boost::random)
         add_library(Boost::random INTERFACE IMPORTED)
@@ -47,6 +56,15 @@ else ()
 endif ()
 add_library(komodo-date::date ALIAS komodo-date)
 
+## On Apple Silicon the build uses Anaconda's Qt 5.15 (Homebrew's Qt5 config
+## is incomplete and CMake would otherwise pick it first via
+## CMAKE_PREFIX_PATH). Honor QT_ROOT / QT_INSTALL_CMAKE_PATH when set.
+if (DEFINED ENV{QT_ROOT} AND NOT DEFINED Qt5_DIR AND NOT DEFINED Qt5_ROOT)
+    set(Qt5_ROOT "$ENV{QT_ROOT}")
+endif ()
+if (DEFINED ENV{QT_INSTALL_CMAKE_PATH} AND NOT DEFINED Qt5_DIR AND NOT DEFINED Qt5_ROOT)
+    set(Qt5_DIR "$ENV{QT_INSTALL_CMAKE_PATH}/lib/cmake/Qt5")
+endif ()
 find_package(Qt5 5.15 COMPONENTS Core Quick LinguistTools Svg WebEngine WebEngineCore WebEngineWidgets Widgets REQUIRED)
 
 set(BUILD_TESTING OFF CACHE BOOL "Override option" FORCE)
