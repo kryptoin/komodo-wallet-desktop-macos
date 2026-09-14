@@ -30,8 +30,7 @@ Item
             anchors.rightMargin: 280
             onDoubleClicked:
             {
-                if (window.visibility === ApplicationWindow.Maximized) window.showNormal()
-                else window.showMaximized()
+                window.toggleMaximize()
             }
         }
         DexMacosHeaderControl { anchors.verticalCenter: parent.verticalCenter }

@@ -18,6 +18,54 @@ DexWindow
     property bool logged: false
     property var  orders: API.app.orders_mdl.orders_proxy_mdl.ModelHelper
 
+    // Manual maximize state. showMaximized() on a frameless window expands
+    // to the full screen on macOS (sliding under the menu bar and clipping
+    // the custom traffic lights + top bar), so maximizing is done by hand
+    // with the menu-bar/dock excluding geometry instead.
+    // Qt also gives fresh windows a platform-default position that can land
+    // under the menu bar, so the initial geometry is set explicitly here.
+    Component.onCompleted:
+    {
+        const available = atomic_qt_utilities.get_available_screen_geometry()
+        const w = Math.min(Math.max(minimumWidth, 1400), available.width)
+        const h = Math.min(Math.max(minimumHeight, 900), available.height)
+        width = w
+        height = h
+        x = available.x + Math.max(0, (available.width - w) / 2)
+        y = available.y + Math.max(0, (available.height - h) / 2)
+    }
+
+    property rect normalGeometry: Qt.rect(0, 0, 0, 0)
+    property bool isManualMaximized: false
+    function toggleMaximize()
+    {
+        if (isManualMaximized || visibility === ApplicationWindow.Maximized)
+        {
+            if (normalGeometry.width > 0)
+            {
+                x = normalGeometry.x
+                y = normalGeometry.y
+                width = normalGeometry.width
+                height = normalGeometry.height
+            }
+            else
+            {
+                showNormal()
+            }
+            isManualMaximized = false
+        }
+        else
+        {
+            normalGeometry = Qt.rect(x, y, width, height)
+            const available = atomic_qt_utilities.get_available_screen_geometry()
+            x = available.x
+            y = available.y
+            width = available.width
+            height = available.height
+            isManualMaximized = true
+        }
+    }
+
     title: API.app_name
     visible: true
     minimumWidth: General.minimumWidth

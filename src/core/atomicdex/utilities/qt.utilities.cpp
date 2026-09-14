@@ -20,6 +20,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QFile>
+#include <QScreen>
 
 //! Deps
 #include <QrCode.hpp>
@@ -168,5 +169,15 @@ namespace atomic_dex
     qt_utilities::retrieve_main_ticker(const QString& ticker, bool segwit_only, bool exclude_segwit) const
     {
         return QString::fromStdString(atomic_dex::utils::retrieve_main_ticker(ticker.toStdString(), segwit_only, exclude_segwit));
+    }
+
+    QRect
+    qt_utilities::get_available_screen_geometry() const
+    {
+        if (QScreen* screen = QGuiApplication::primaryScreen())
+        {
+            return screen->availableGeometry();
+        }
+        return QRect(0, 0, 1400, 864);
     }
 } // namespace atomic_dex

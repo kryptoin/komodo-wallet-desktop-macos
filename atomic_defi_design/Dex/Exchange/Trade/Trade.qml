@@ -7,6 +7,8 @@ import AtomicDEX.TradingError 1.0
 import AtomicDEX.TradingMode 1.0
 import "../../Components"
 import "../../Wallet"
+import "Trading/"
+import "SimpleView" as SimpleView
 import App 1.0
 
 Item
@@ -170,12 +172,26 @@ Item
         spacing: 8
         anchors.margins: 5
 
+        TradeViewHeader
+        {
+            id: header
+            width: parent.width
+            height: 40
+        }
+
         ProView
         {
             id: proView
             width: parent.width
-            height: parent.height - 10
+            height: parent.height - 58
             visible: API.app.trading_pg.current_trading_mode == TradingMode.Pro
+            enabled: visible
+        }
+
+        SimpleView.Main
+        {
+            anchors.horizontalCenter: parent.horizontalCenter
+            visible: API.app.trading_pg.current_trading_mode == TradingMode.Simple
             enabled: visible
         }
     }

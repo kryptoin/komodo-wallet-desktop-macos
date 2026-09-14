@@ -18,6 +18,7 @@
 
 #include <QJsonObject>
 #include <QModelIndex>
+#include <QRect>
 #include <QString>
 #include <QStringList>
 #include <QVariant>
@@ -93,5 +94,13 @@ namespace atomic_dex
          * @example -> retrieve_main_ticker("BUSD") -> BUSD retrieve_main_ticker("BUSD-ERC20") -> BUSD
          */
         Q_INVOKABLE QString retrieve_main_ticker(const QString& ticker, bool segwit_only = false, bool exclude_segwit = false) const;
+
+        /**
+         * @return the primary screen geometry with the menu bar and dock
+         * excluded. Frameless windows maximized with showMaximized() expand
+         * to the full screen on macOS (sliding under the menu bar), so QML
+         * maximizes manually with this geometry instead.
+         */
+        Q_INVOKABLE QRect get_available_screen_geometry() const;
     };
 } // namespace atomic_dex

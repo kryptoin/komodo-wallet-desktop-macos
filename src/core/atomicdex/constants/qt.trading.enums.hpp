@@ -13,7 +13,8 @@ namespace atomic_dex
         enum TradingModeEnum
         {
             Pro        = 0,
-            MultiOrder = 1
+            Simple     = 1, ///< Simple (swap) trading view ported from the 0.6.1 tree
+            MultiOrder = 2
         };
 
         Q_ENUM(TradingModeEnum)

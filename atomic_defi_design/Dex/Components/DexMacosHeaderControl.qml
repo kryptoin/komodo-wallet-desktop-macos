@@ -86,7 +86,7 @@ Row
         {
             visible: _headerControlRow.hovered
             anchors.centerIn: parent
-            source: window.visibility === ApplicationWindow.Maximized ? "qrc:/assets/images/qaterial/arrow-collapse.svg" : "qrc:/assets/images/qaterial/arrow-expand.svg"
+            source: (window.isManualMaximized || window.visibility === ApplicationWindow.Maximized) ? "qrc:/assets/images/qaterial/arrow-collapse.svg" : "qrc:/assets/images/qaterial/arrow-expand.svg"
             iconSize: parent.width - 2
             color: 'black'
         }
@@ -98,8 +98,7 @@ Row
             anchors.fill: parent
             onClicked:
             {
-                if (window.visibility === ApplicationWindow.Maximized) window.showNormal()
-                else window.showMaximized()
+                window.toggleMaximize()
             }
         }
     }

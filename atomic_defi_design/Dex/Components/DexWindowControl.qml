@@ -28,11 +28,7 @@ Item
             onPressed: window.startSystemMove();
             anchors.fill: parent
             anchors.rightMargin: window.isOsx ? 280 : 0
-            onDoubleClicked:
-            {
-                if (window.visibility === ApplicationWindow.Maximized) window.showNormal()
-                else window.showMaximized()
-            }
+            onDoubleClicked: window.toggleMaximize()
         }
         DexWindowHeaderControl { visible: !window.isOsx }
         DexMacosHeaderControl { visible: window.isOsx }
