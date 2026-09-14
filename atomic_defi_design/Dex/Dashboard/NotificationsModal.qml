@@ -328,7 +328,7 @@ DexPopup
             "open_log_modal",
             qsTr("Could not reach to endpoint") + ". " + check_internet_connection_text + "\n\n" + base_uri)
 
-        toast.show(qsTr("Endpoint not reachable"), General.time_toast_important_error, error)
+        toast.show(qsTr("Endpoint not reachable"), General.time_toast_important_error, qsTr("Could not reach to endpoint") + ". " + check_internet_connection_text + "\n\n" + base_uri)
     }
 
     Component.onCompleted:

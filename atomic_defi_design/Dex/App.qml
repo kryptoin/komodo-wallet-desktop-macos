@@ -89,6 +89,14 @@ DefaultRectangle
 
     Component
     {
+        id: no_connection
+
+        NoConnection
+        {}
+    }
+
+    Component
+    {
         id: dialogManager
         DexDialogManager
         {}
@@ -106,6 +114,9 @@ DefaultRectangle
         anchors.fill: parent
         sourceComponent:
         {
+            if (!API.app.internet_checker.internet_reacheable)
+                return no_connection
+
             return _availablePages[_currentPage]
         }
     }

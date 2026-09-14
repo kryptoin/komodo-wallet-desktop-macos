@@ -35,6 +35,7 @@
 #include "atomicdex/services/price/komodo_prices/komodo.prices.provider.hpp"
 #include "atomicdex/services/price/orderbook.scanner.service.hpp"
 #include "atomicdex/services/sync/timesync.checker.service.hpp"
+#include "atomicdex/services/internet/internet.checker.service.hpp"
 
 namespace
 {
@@ -446,6 +447,7 @@ namespace atomic_dex
         system_manager_.create_system<orderbook_scanner_service>(system_manager_);
         system_manager_.create_system<komodo_prices_provider>();
         system_manager_.create_system<timesync_checker_service>();
+        system_manager_.create_system<internet_service_checker>();
         system_manager_.create_system<exporter_service>(system_manager_);
         system_manager_.create_system<trading_page>(system_manager_, m_event_actions.at(events_action::about_to_exit_app), portfolio_system.get_portfolio(), this);
         system_manager_.create_system<zcash_params_service>(system_manager_, this->dispatcher_, this);
@@ -816,6 +818,17 @@ namespace atomic_dex
     {
         auto ptr = const_cast<timesync_checker_service*>(std::addressof(system_manager_.get_system<timesync_checker_service>()));
         //SPDLOG_DEBUG("application::get_timesync_checker_service");
+        assert(ptr != nullptr);
+        return ptr;
+    }
+} // namespace atomic_dex
+
+//! internet checker
+namespace atomic_dex
+{
+    internet_service_checker* application::get_internet_checker() const
+    {
+        auto ptr = const_cast<internet_service_checker*>(std::addressof(system_manager_.get_system<internet_service_checker>()));
         assert(ptr != nullptr);
         return ptr;
     }
