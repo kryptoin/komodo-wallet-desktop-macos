@@ -25,12 +25,37 @@ Item
 
         MouseArea
         {
-            onPressed: window.startSystemMove();
+            // Manual drag: window.startSystemMove() only engages about half
+            // the time on this Qt/macOS combination (press arrives but the
+            // native move never starts), so move the frameless window by
+            // hand. pressOffset stays valid because this area does not move
+            // relative to the window while dragging.
+            property point pressOffset: Qt.point(0, 0)
+            property bool  dragged: false
             anchors.fill: parent
             anchors.rightMargin: 280
+            onPressed: function(mouse)
+            {
+                pressOffset = Qt.point(mouse.x, mouse.y)
+                dragged = false
+            }
+            onPositionChanged: function(mouse)
+            {
+                if (!pressed)
+                    return
+                const dx = mouse.x - pressOffset.x
+                const dy = mouse.y - pressOffset.y
+                if (Math.abs(dx) + Math.abs(dy) > 2)
+                    dragged = true
+                window.x += dx
+                window.y += dy
+            }
             onDoubleClicked:
             {
-                window.toggleMaximize()
+                // A retry click after a failed drag must not maximize: only
+                // honor double-clicks that did not travel.
+                if (!dragged)
+                    window.toggleMaximize()
             }
         }
         DexMacosHeaderControl { anchors.verticalCenter: parent.verticalCenter }
