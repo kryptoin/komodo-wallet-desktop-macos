@@ -16,10 +16,12 @@ Item {
 
     readonly property int sort_by_name: 0
     readonly property int sort_by_value: 1
+    readonly property int sort_by_balance: 2
     readonly property int sort_by_change: 3
     readonly property int sort_by_trend: 4
     readonly property int sort_by_price: 5
     readonly property int sort_by_unset: 6
+    readonly property int sort_by_source: 7
     property bool ascending: false
     property int current_sort: sort_by_value
 
@@ -31,12 +33,18 @@ Item {
         case sort_by_value:
             portfolio_coins.sort_by_currency_balance(ascending)
             break
+        case sort_by_balance:
+            portfolio_coins.sort_by_balance(ascending)
+            break
         case sort_by_price:
             portfolio_coins.sort_by_currency_unit(ascending)
             break
         case sort_by_trend:
         case sort_by_change:
             portfolio_coins.sort_by_change_last24h(ascending)
+            break
+        case sort_by_source:
+            portfolio_coins.sort_by_source(ascending)
             break
         }
     }

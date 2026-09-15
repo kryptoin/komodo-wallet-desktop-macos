@@ -157,6 +157,7 @@ namespace atomic_dex
                 update_value(LastPriceTimestamp, last_price_timestamp, idx, *this);
                 QString            change24_h_raw              = retrieve_change_24h(provider, coin, *m_config, m_system_manager);
                 update_value(Change24H, format_to_precision(change24_h_raw.toStdString(), 3), idx, *this);
+                update_value(RawChange24HRole, safe_string_to_double(change24_h_raw.toStdString()), idx, *this);
                 const std::string  balance_raw                 = kdf_system.get_balance_info(coin.ticker, ec);
                 QString            formatted_balance           = format_to_precision(balance_raw, 8);
                 auto&& [prev_balance, new_balance, is_change_b] = update_value(BalanceRole, formatted_balance, idx, *this);
@@ -229,6 +230,7 @@ namespace atomic_dex
 
                 QString change24_h_raw = retrieve_change_24h(provider, coin, *m_config, m_system_manager);
                 update_value(Change24H, format_to_precision(change24_h_raw.toStdString(), 3), idx, *this);
+                update_value(RawChange24HRole, safe_string_to_double(change24_h_raw.toStdString()), idx, *this);
 
                 if (is_change_b)
                 {

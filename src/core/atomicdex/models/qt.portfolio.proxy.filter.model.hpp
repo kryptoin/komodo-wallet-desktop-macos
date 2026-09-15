@@ -61,9 +61,11 @@ namespace atomic_dex
 
         //! Qt Invokables.
         Q_INVOKABLE void sort_by_name(bool is_ascending);
+        Q_INVOKABLE void sort_by_balance(bool is_ascending);
         Q_INVOKABLE void sort_by_currency_balance(bool is_ascending);
         Q_INVOKABLE void sort_by_change_last24h(bool is_ascending);
         Q_INVOKABLE void sort_by_currency_unit(bool is_ascending);
+        Q_INVOKABLE void sort_by_source(bool is_ascending);
         Q_INVOKABLE QVariantMap get(int row);
 
         //! Qt Properties Signals.
