@@ -146,6 +146,12 @@
         <source>Activating: </source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <location filename="../../Dex/Portfolio/AssetsList.qml" line="246"/>
+        <location filename="../../Dex/Portfolio/AssetsList.qml" line="267"/>
+        <source>N/A</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>Bottom</name>
@@ -328,12 +334,12 @@
 <context>
     <name>Chart</name>
     <message>
-        <location filename="../../Dex/Exchange/ProView/Chart.qml" line="264"/>
+        <location filename="../../Dex/Exchange/ProView/Chart.qml" line="281"/>
         <source>Loading pair chart data</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../Dex/Exchange/ProView/Chart.qml" line="265"/>
+        <location filename="../../Dex/Exchange/ProView/Chart.qml" line="282"/>
         <source>There is no chart data for this pair</source>
         <translation type="unfinished"></translation>
     </message>

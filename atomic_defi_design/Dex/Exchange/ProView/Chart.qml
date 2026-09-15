@@ -26,6 +26,21 @@ Item
         let rel_ticker = ""
         let base_ticker = ""
 
+        // GLEEC-OLD is a separate legacy UTXO asset. It must not inherit the
+        // current GLEEC token's external chart identifiers.
+        if (right_ticker === "GLEEC-OLD")
+        {
+            pair_supported = false
+            activeChartKey = ""
+            dashboard.webEngineView.visible = false
+            return
+        }
+
+        if (source == "coinpaprika" && right_ticker === "GLEEC")
+        {
+            source = "livecoinwatch"
+        }
+
         if (source == "coingecko")
         {
             rel_ticker = API.app.portfolio_pg.global_cfg_mdl.get_coin_info(right_ticker).coingecko_id
@@ -193,15 +208,17 @@ Item
                 pair_supported = true
                 let widget_x = 390
                 let widget_y = 200
-                let scale_x = root.implicitWidth / widget_x
-                let scale_y = root.implicitHeight / widget_y
+                let available_width = Math.max(root.width - 16, 1)
+                let available_height = Math.max(root.height - 16, 1)
+                let scale_x = available_width / widget_x
+                let scale_y = available_height / widget_y
                 chart_url = "https://www.livecoinwatch.com"
                 chart_html = `
                 <link rel="icon" href="data:,">
                 <style>
                     body { margin: auto; overflow: hidden; }
                     .livecoinwatch-widget-1 {
-                        transform: scale(${Math.min(scale_x, scale_y)});
+                      transform: scale(${Math.min(scale_x, scale_y)});
                         transform-origin: top left;
                     }
                     a { pointer-events: none; }
@@ -308,15 +325,7 @@ Item
         target: app
         function onPairChanged(left, right)
         {
-            // left/right needs to be "reinverted" before use (it is inverted somewhere else)
-            if (API.app.trading_pg.market_mode == MarketMode.Sell)
-            {
-                root.loadChart(left, right)
-            }
-            else
-            {
-                root.loadChart(right, left)
-            }
+          root.loadChart(left, right)
         }
     }
 

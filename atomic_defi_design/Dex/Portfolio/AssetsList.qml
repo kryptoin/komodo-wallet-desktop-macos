@@ -243,7 +243,7 @@ Dex.DefaultListView
                 font: Dex.DexTypo.body2
                 horizontalAlignment: Text.AlignRight
                 verticalAlignment: Text.AlignVCenter
-                text_value: Dex.API.app.settings_pg.current_currency_sign + " " + model.main_currency_price_for_one_unit
+                text_value: model.main_currency_price_for_one_unit === "" ? qsTr("N/A") : Dex.API.app.settings_pg.current_currency_sign + " " + model.main_currency_price_for_one_unit
             }
 
             Item // Price Provider
@@ -259,6 +259,13 @@ Dex.DefaultListView
                     source: enabled ? Dex.General.providerIcon(priceProvider) : ""
                     width: 16
                     height: 16
+                }
+
+                Dex.DexLabel {
+                    anchors.centerIn: parent
+                    visible: !priceProvider || priceProvider === "unknown"
+                    text_value: qsTr("N/A")
+                    font: Dex.DexTypo.overLine
                 }
             }
 

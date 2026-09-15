@@ -15,6 +15,7 @@
  ******************************************************************************/
 
 #include <iomanip>
+#include <cmath>
 #include <sstream>
 #include <QJSValue>
 #include "atomicdex/events/qt.events.hpp"
@@ -45,6 +46,7 @@ namespace atomic_dex
         if (raw_val.empty()) return QString::fromStdString("0." + std::string(precision, '0'));
         try {
             double val = std::stod(raw_val);
+            if (!std::isfinite(val)) return QString::fromStdString("0." + std::string(precision, '0'));
             std::stringstream stream;
             stream << std::fixed << std::setprecision(precision) << val;
             return QString::fromStdString(stream.str());
@@ -55,7 +57,10 @@ namespace atomic_dex
 
     double safe_string_to_double(const std::string& str) {
         if (str.empty()) return 0.0;
-        try { return std::stod(str); }
+        try {
+            const double value = std::stod(str);
+            return std::isfinite(value) ? value : 0.0;
+        }
         catch (...) { return 0.0; }
     }
 

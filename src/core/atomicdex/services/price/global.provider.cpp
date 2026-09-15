@@ -18,8 +18,26 @@
 #include "atomicdex/pages/qt.settings.page.hpp"
 #include "atomicdex/services/price/komodo_prices/komodo.prices.provider.hpp"
 
+#include <cerrno>
+#include <cmath>
+#include <cstdlib>
+
 namespace
 {
+    bool
+    is_finite_rate(const std::string& value)
+    {
+        if (value.empty())
+        {
+            return false;
+        }
+
+        char* end = nullptr;
+        errno     = 0;
+        const auto parsed = std::strtold(value.c_str(), &end);
+        return end != value.c_str() && *end == '\0' && errno != ERANGE && std::isfinite(parsed);
+    }
+
     atomic_dex::http::client_config g_openrates_cfg{[]()
                                                           {
                                                               atomic_dex::http::client_config cfg;
@@ -130,6 +148,10 @@ namespace atomic_dex
                 return "0.00";
             auto&       provider        = m_system_manager.get_system<komodo_prices_provider>();
             std::string current_price   = provider.get_rate_conversion(ticker);
+            if (!is_finite_rate(current_price))
+            {
+                return "0.00";
+            }
 
             if (!is_this_currency_a_fiat(m_cfg, fiat))
             {
@@ -331,14 +353,25 @@ namespace atomic_dex
             const std::string base_rate_str = get_rate_conversion("USD", base, false);
             const std::string rel_rate_str  = get_rate_conversion("USD", rel, false);
 
-            if (safe_float(rel_rate_str) <= 0 || safe_float(base_rate_str) <= 0)
+            if (!is_finite_rate(base_rate_str) || !is_finite_rate(rel_rate_str))
             {
                 return "0.00";
             }
 
             t_float_50  base_rate_f(base_rate_str);
             t_float_50  rel_rate_f(rel_rate_str);
+
+            if (base_rate_f != base_rate_f || rel_rate_f != rel_rate_f || base_rate_f <= 0 || rel_rate_f <= 0)
+            {
+                return "0.00";
+            }
+
             t_float_50  result     = base_rate_f / rel_rate_f;
+            if (result != result || result <= 0)
+            {
+                return "0.00";
+            }
+
             std::string result_str = result.str(8, std::ios_base::fixed);
             boost::trim_right_if(result_str, boost::is_any_of("0"));
             boost::trim_right_if(result_str, boost::is_any_of("."));
