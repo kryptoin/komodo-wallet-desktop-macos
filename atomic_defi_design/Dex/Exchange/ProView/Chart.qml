@@ -19,7 +19,7 @@ Item
 
     onPair_supportedChanged: if (!pair_supported) webEngineViewPlaceHolder.visible = false
 
-    function loadChart(right_ticker, left_ticker, source="coinpaprika")
+    function loadChart(subject_ticker, counter_ticker, source="coinpaprika")
     {
         let chart_url = ""
         let chart_html = ""
@@ -28,7 +28,7 @@ Item
 
         // GLEEC-OLD is a separate legacy UTXO asset. It must not inherit the
         // current GLEEC token's external chart identifiers.
-        if (right_ticker === "GLEEC-OLD")
+        if (subject_ticker === "GLEEC-OLD")
         {
             pair_supported = false
             activeChartKey = ""
@@ -36,14 +36,14 @@ Item
             return
         }
 
-        if (source == "coinpaprika" && right_ticker === "GLEEC")
+        if (source == "coinpaprika" && subject_ticker === "GLEEC")
         {
             source = "livecoinwatch"
         }
 
         if (source == "coingecko")
         {
-            rel_ticker = API.app.portfolio_pg.global_cfg_mdl.get_coin_info(right_ticker).coingecko_id
+            rel_ticker = API.app.portfolio_pg.global_cfg_mdl.get_coin_info(subject_ticker).coingecko_id
             base_ticker = ""
             if (rel_ticker != "")
             {
@@ -65,7 +65,7 @@ Item
         // https://github.com/coinpaprika/widget-currency
         if (source == "coinpaprika")
         {
-            rel_ticker = API.app.portfolio_pg.global_cfg_mdl.get_coin_info(right_ticker).coinpaprika_id
+            rel_ticker = API.app.portfolio_pg.global_cfg_mdl.get_coin_info(subject_ticker).coinpaprika_id
             base_ticker = ""
             if (rel_ticker != "")
             {
@@ -155,7 +155,7 @@ Item
                 <div class="coinpaprika-currency-widget ${night_mode}"
                      data-primary-currency="${API.app.settings_pg.current_currency}"
                      data-currency="${rel_ticker}"
-                     data-icon-src="${General.coinIcon(right_ticker)}"
+                     data-icon-src="${General.coinIcon(subject_ticker)}"
                      data-language="en"
                      data-range="30d"
                      data-modules='["chart"]'
@@ -201,8 +201,8 @@ Item
 
         if (source == "livecoinwatch")
         {
-            rel_ticker = API.app.portfolio_pg.global_cfg_mdl.get_coin_info(right_ticker).livecoinwatch_id
-            base_ticker = API.app.portfolio_pg.global_cfg_mdl.get_coin_info(left_ticker).livecoinwatch_id
+            rel_ticker = API.app.portfolio_pg.global_cfg_mdl.get_coin_info(subject_ticker).livecoinwatch_id
+            base_ticker = API.app.portfolio_pg.global_cfg_mdl.get_coin_info(counter_ticker).livecoinwatch_id
             if (rel_ticker != "" && base_ticker != "")
             {
                 pair_supported = true
