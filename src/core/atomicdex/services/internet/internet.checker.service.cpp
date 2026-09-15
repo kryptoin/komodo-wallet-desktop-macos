@@ -22,8 +22,7 @@
 
 namespace
 {
-    constexpr const char* g_coingecko_ping_endpoint = "https://api.coingecko.com";
-    constexpr const char* g_time_endpoint           = "https://time.now";
+    constexpr const char* g_time_endpoint = "https://time.now";
     atomic_dex::http::client_config g_probe_cfg{[]() {
         atomic_dex::http::client_config cfg;
         cfg.set_validate_certificates(false);
@@ -31,8 +30,7 @@ namespace
         return cfg;
     }()};
 
-    t_http_client_ptr g_coingecko_client = std::make_unique<t_http_client>((g_coingecko_ping_endpoint), g_probe_cfg);
-    t_http_client_ptr g_time_client      = std::make_unique<t_http_client>((g_time_endpoint), g_probe_cfg);
+    t_http_client_ptr g_time_client = std::make_unique<t_http_client>((g_time_endpoint), g_probe_cfg);
 
     async::task<t_http_response>
     async_probe(t_http_client_ptr& client, const std::string& uri)
@@ -138,20 +136,6 @@ namespace atomic_dex
     {
         const unsigned int generation = ++m_probe_generation;
         m_probe_succeeded             = false;
-
-        async_probe(g_coingecko_client, "/api/v3/ping")
-            .then([this, generation](async::task<t_http_response> previous_task) {
-                try
-                {
-                    t_http_response resp = previous_task.get();
-                    this->treat_probe_result(resp.status_code() == 200, g_coingecko_ping_endpoint, generation);
-                }
-                catch (const std::exception& e)
-                {
-                    SPDLOG_WARN("internet probe error for {}: {}", g_coingecko_ping_endpoint, e.what());
-                    this->treat_probe_result(false, g_coingecko_ping_endpoint, generation);
-                }
-            });
 
         async_probe(g_time_client, "/developer/api/timezone/UTC")
             .then([this, generation](async::task<t_http_response> previous_task) {

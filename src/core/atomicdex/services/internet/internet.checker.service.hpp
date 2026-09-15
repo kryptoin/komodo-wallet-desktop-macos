@@ -26,8 +26,9 @@ namespace atomic_dex
     //! NoConnection interstitial (same QML contract as the 0.6.1 tree:
     //! `internet_reacheable`, `seconds_left_to_auto_retry`, `retry()`).
     //! Ported off cpprestsdk onto the in-house http.utilities client;
-    //! liveness is decided by public probes only (a localhost backend can
-    //! never prove internet reachability).
+    //! liveness is decided by a public probe only (a localhost backend can
+    //! never prove internet reachability). Optional market-data providers do
+    //! not determine general internet reachability.
     class internet_service_checker final : public QObject, public ag::ecs::pre_update_system<internet_service_checker>
     {
         //! Q_Object definition
